@@ -22,14 +22,8 @@
 
 package com.picmonkey.promise
 {
-    import flash.events.Event;
-    import flash.events.EventDispatcher;
-    import flash.events.IEventDispatcher;
     import flash.utils.clearInterval;
     import flash.utils.setTimeout;
-
-    import mx.rpc.AsyncToken;
-    import mx.rpc.Responder;
 
     /**
      * Promise.
@@ -41,13 +35,12 @@ package com.picmonkey.promise
      * @author John Yanarella
      * @author Thomas Burleson
      */
-    public class Promise extends EventDispatcher
+    public class Promise
     {
         // ========================================
         // Public properties
         // ========================================
 
-        [Bindable( "stateChanged" )]
         /**
          * Indicates this Promise has not yet been fulfilled.
          */
@@ -56,7 +49,6 @@ package com.picmonkey.promise
             return deferred.pending;
         }
 
-        [Bindable( "stateChanged" )]
         /**
          * Indicates this Promise has been fulfilled.
          */
@@ -65,7 +57,6 @@ package com.picmonkey.promise
             return deferred.resolved;
         }
 
-        [Bindable( "stateChanged" )]
         /**
          * Indicates this Promise has failed.
          */
@@ -74,16 +65,6 @@ package com.picmonkey.promise
             return deferred.rejected;
         }
 
-        [Bindable( "stateChanged" )]
-        /**
-         * Indicates this Promise has been cancelled.
-         */
-        public function get cancelled():Boolean
-        {
-            return deferred.cancelled;
-        }
-
-        [Bindable( "stateChanged" )]
         /**
          * Progress supplied when this Promise was updated.
          */
@@ -92,7 +73,6 @@ package com.picmonkey.promise
             return deferred.status;
         }
 
-        [Bindable( "stateChanged" )]
         /**
          * Result supplied when this Promise was fulfilled.
          */
@@ -101,22 +81,12 @@ package com.picmonkey.promise
             return deferred.result;
         }
 
-        [Bindable( "stateChanged" )]
         /**
          * Error supplied when this Promise failed.
          */
         public function get error():*
         {
             return deferred.error;
-        }
-
-        [Bindable( "stateChanged" )]
-        /**
-         * Reason supplied when this Promise failed.
-         */
-        public function get reason():*
-        {
-            return deferred.reason;
         }
 
         // ========================================
@@ -140,8 +110,6 @@ package com.picmonkey.promise
             super();
 
             this.deferred = deferred;
-
-            deferred.addEventListener( Deferred.STATE_CHANGED, deferred_stateChangeHandler, false, 0, true );
         }
 
         // ========================================
@@ -163,7 +131,6 @@ package com.picmonkey.promise
                 results     :Array    = fill( new Array( size ) ),
                 errors      :Array    = fill( new Array( size ) ),
                 statuses    :Array    = fill( new Array( size ) ),
-                reasons         :Array    = fill( new Array( size ) ),
 
                 deferred    :Deferred = new Deferred( function(dfd:Deferred):* {
                         // If no promise, immediately resolve
@@ -200,14 +167,6 @@ package com.picmonkey.promise
                                                   statuses[ promises.indexOf( promise ) ] = status;
 
                                                   deferred.notify.apply(deferred, statuses );
-                                              },
-
-                                              // Any promise cancel(), cancels the when()
-
-                                              function ( reason:* ):void {
-                                                  reasons[ promises.indexOf( promise ) ] = reason;
-
-                                                  deferred.cancel.apply(deferred, reasons );
                                               }
                                               );
                              }(promise));
@@ -217,155 +176,6 @@ package com.picmonkey.promise
         }
 
 
-        /**
-         * Similar to the callLater() function but supports any arbitrary delay
-         * and allows optional, additional parameters to passed [later] to the
-         * resolved handler [assigned via .done() or .then()].
-         *
-         * A special configuration allows the 1st optional parameter to be a function
-         * reference so the wait(delay,function(){...}) syntax can be easily used.
-         *
-         * Here are the possible call options:
-         *
-         *   wait( delay )
-         *   wait( delay, ...params )
-         *   wait( delay, func2Call )
-         *       wait( delay, func2Call, ...func2Params )
-         *
-         * @param delay Number of milliseconds to wait before resolving/projecting the promise;
-         *              Default value === 30 msecs
-         *
-         * @param args  Optional listing of parameters
-         */
-        public static function wait ( delay:uint=30, ...args ) : Promise {
-
-            /**
-             * If the first variable param is a Function reference, then auto-call
-             * that function with/without any subsequent optional params
-             */
-            function doInlineCallback():* {
-                var func    : Function = args.length ? args[0] as Function : null,
-                    result  : *        = null;
-
-                if (func != null) {
-                    // 1) Remove function element,
-                    // 2) Call function, save response, and
-                    // 3) Clear arguments
-
-                    args.shift();
-
-                    result = func.apply(null, args);
-                    args   = [ ];
-                }
-
-                return result;
-            }
-
-            return new Deferred( function(dfd:Deferred) : void {
-                    var timer:uint = setTimeout( function():void{
-                            clearInterval(timer);
-
-                            // Call the specified function (if any)
-
-                            var response : * = doInlineCallback();
-
-                            // Since resolve() expects a resultVal == *, we use the .call() invocation
-
-                            dfd.resolve.apply( dfd, response ? [response] : args.length ? args : null );
-
-                        }, delay );
-
-            }).promise;
-        }
-
-
-        /**
-         * Power feature to easily create deferred [delegated handling of response/fault processing]
-         * for targeted functions, AsyncTokens, HTTPService, URLLoader, RemoteObject, and generalized
-         * IEventDispatchers.
-         *
-         * If the target is an IEventDispatcher, this creates a Promise that adapts an
-         * asynchronous operation which uses event-based notification:
-         *
-         *      watch( <IEventDispatcher>, <options> );
-         *      watch( <IEventDispatcher>, <resultEventType> );
-         *          watch( <IEventDispatcher>, <resultEventType>, <faultEventTypes[]>, );
-         *      watch( <IEventDispatcher>, <resultEventType>, <faultEventTypes[]>, <options> );
-         *
-         * The <options> parameter is a hashmap of optional key/value pairs:
-         *
-         *          {
-         *          useCapture : <boolean>,
-         *              priority   : <int>,
-         *          types      : {
-         *                  result          : <string>,
-         *                  faults          : [ <string> ],
-         *                  progress    : {
-         *                              type : <string>,
-         *                              path : <string>
-         *                            }
-         *                   },
-         *
-         *          // Token options used to filter only specific event instances of `type`
-         *
-         *          token          : {
-         *                  path          : <string>,
-         *                  expectedValue : *
-         *                       }
-         *          }
-         *
-         *
-         * @param args Array of optional parameters; only used when the target is an IEventDispatcher
-         *
-         * @see com.picmonkey.util.promise.PromiseUtil#watch()
-         */
-        public static function watch (target:Object, ...args):Promise {
-            switch (target.constructor)
-                {
-                case Promise    :
-                    return Promise.when( target );
-
-                case Function   :
-                    return new Deferred( function(dfd:Deferred):void {
-                            var results:* = Function(target).apply(null,args);
-
-                            // Could be a Promise-generator or a `normal` function
-
-                            if (results is Promise)
-                                {
-                                    Promise(results)
-                                        .pipe( function(value:*):* {
-                                                return dfd.resolve(value);
-                                            });
-
-                                } else {
-                                dfd.resolve( results );
-                            }
-
-                    }).promise;
-
-                    //return  new Deferred( target as Function ).resolve( args ).promise;
-
-                case AsyncToken :
-                    return  new Deferred( function( dfd:Deferred ):void {
-                            var responder : Responder = new Responder( dfd.resolve, dfd.reject );
-                            AsyncToken(target).addResponder( responder );
-                    }).promise;
-
-                default        :
-                    if ( target is IEventDispatcher )
-                        {
-                            return PromiseUtil.watch.apply(null, [target].concat(args));
-                        }
-                }
-
-            // Return empty, resolved promise
-
-            return new Deferred( function(dfd:Deferred):void{
-                    dfd.resolve( [target].concat(args) );
-            }).promise;
-        }
-
         // ========================================
         // Public methods
         // ========================================
@@ -373,9 +183,9 @@ package com.picmonkey.promise
         /**
          * Register callbacks to be called when this Promise is resolved or rejected.
          */
-        public function then( resultCallback:Function, errorCallback:Function = null, progressCallback:Function = null, cancelCallback:Function = null ):Promise
+        public function then( resultCallback:Function, errorCallback:Function = null, progressCallback:Function = null ):Promise
         {
-            return deferred.then( resultCallback, errorCallback, progressCallback, cancelCallback ).promise;
+            return deferred.then( resultCallback, errorCallback, progressCallback ).promise;
         }
 
         /**
@@ -424,60 +234,9 @@ package com.picmonkey.promise
             return deferred.pipe( resultCallback, errorCallback, progressCallback );
         }
 
-
-        /**
-         * Registers a callback to be called when this Promise is updated.
-         */
-        public function onProgress( progressCallback:Function ):Promise
-        {
-            return deferred.onProgress( progressCallback ).promise;
-        }
-
-        /**
-         * Registers a callback to be called when this Promise is resolved.
-         */
-        public function onResult( resultCallback:Function ):Promise
-        {
-            return deferred.onResult( resultCallback ).promise;
-        }
-
-        /**
-         * Registers a callback to be called when this Promise is rejected.
-         */
-        public function onError( errorCallback:Function ):Promise
-        {
-            return deferred.onError( errorCallback ).promise;
-        }
-
-        /**
-         * Registers a callback to be called when this Promise is cancelled.
-         */
-        public function onCancel( cancelCallback:Function ):Promise
-        {
-            return deferred.onCancel( cancelCallback ).promise;
-        }
-
-        /**
-         * Special feature of this read-only promise:
-         * Ability to `cancel` this pending Promise.
-         *
-         */
-        public function cancel( reason:* = null ):void
-        {
-            deferred.cancel( reason );
-        }
-
         // ========================================
         // Protected methods
         // ========================================
-
-        /**
-         * Handle and redispatch state change notifications from the Deferred operation.
-         */
-        protected function deferred_stateChangeHandler( event:Event ):void
-        {
-            dispatchEvent( event.clone() );
-        }
 
         /**
          * Convert all elements of `list` to promises.
