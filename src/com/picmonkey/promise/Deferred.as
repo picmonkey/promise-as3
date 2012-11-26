@@ -22,9 +22,6 @@
 
 package com.picmonkey.promise
 {
-    import flash.events.Event;
-    import flash.events.EventDispatcher;
-
     /**
      * Deferred.
      *
@@ -38,23 +35,14 @@ package com.picmonkey.promise
      * @author John Yanarella
      * @author Thomas Burleson
      */
-    public class Deferred extends EventDispatcher
+    public class Deferred
     {
-        // ========================================
-        // Protected constants
-        // ========================================
-
-        /**
-         * Internal _state change Event type.
-         */
-        internal static const STATE_CHANGED:String = "stateChanged";
-
         // ========================================
         // Public constants
         // ========================================
 
         /**
-         * State for a Deferred that has not yet been resolved, rejected or cancelled.
+         * State for a Deferred that has not yet been resolved or rejected.
          */
         public static const PENDING_STATE:String = "pending";
 
@@ -68,11 +56,6 @@ package com.picmonkey.promise
          */
         public static const REJECTED_STATE:String = "rejected";
 
-        /**
-         * State for a Deferred that has been cancelled.
-         */
-        public static const CANCELLED_STATE:String = "cancelled";
-
         // ========================================
         // Public properties
         // ========================================
@@ -85,7 +68,6 @@ package com.picmonkey.promise
             return _promise;
         }
 
-        [Bindable( "stateChanged" )]
         /**
          * Exposes read-only value of current state
          */
@@ -95,9 +77,8 @@ package com.picmonkey.promise
         }
 
 
-        [Bindable( "stateChanged" )]
         /**
-         * Indicates this Deferred has not yet been resolved, rejected or cancelled.
+         * Indicates this Deferred has not yet been resolved or rejected.
          */
         public function get pending():Boolean
         {
@@ -105,7 +86,6 @@ package com.picmonkey.promise
         }
 
 
-        [Bindable( "stateChanged" )]
         /**
          * Indicates this Deferred has been resolved.
          * Alias function; used to match jQuery API
@@ -114,7 +94,6 @@ package com.picmonkey.promise
             return ( _state == RESOLVED_STATE );
         }
 
-        [Bindable( "stateChanged" )]
         /**
          * Indicates this Deferred has been rejected.
          * Alias function; used to match jQuery API
@@ -123,17 +102,6 @@ package com.picmonkey.promise
             return ( _state == REJECTED_STATE );
         }
 
-        [Bindable( "stateChanged" )]
-        /**
-         * Indicates this Deferred has been cancelled
-         * Alias function; used to match jQuery API
-         */
-        public function get cancelled():Boolean {
-            return ( _state == CANCELLED_STATE );
-        }
-
-
-        [Bindable( "stateChanged" )]
         /**
          * Progress supplied when this Deferred was updated.
          */
@@ -142,7 +110,6 @@ package com.picmonkey.promise
             return notifyDispatcher.lastMemory;
         }
 
-        [Bindable( "stateChanged" )]
         /**
          * Result supplied when this Deferred was resolved.
          */
@@ -151,22 +118,12 @@ package com.picmonkey.promise
             return resolveDispatcher.lastMemory;
         }
 
-        [Bindable( "stateChanged" )]
         /**
          * Error supplied when this Deferred was rejected.
          */
         public function get error():*
         {
             return rejectDispatcher.lastMemory;
-        }
-
-        [Bindable( "stateChanged" )]
-        /**
-         * Reason supplied when this Deferred was cancelled.
-         */
-        public function get reason():*
-        {
-            return cancelDispatcher.lastMemory;
         }
 
         // ========================================
@@ -224,19 +181,18 @@ package com.picmonkey.promise
         }
 
         /**
-         * Register callbacks to be called when this Deferred is resolved, rejected, cancelled and updated.
+         * Register callbacks to be called when this Deferred is resolved, rejected and updated.
          */
-        public function then( resultCallback:Function=null, errorCallback:Function = null, progressCallback:Function = null, cancelCallback:Function = null ):Deferred
+        public function then( resultCallback:Function=null, errorCallback:Function = null, progressCallback:Function = null ):Deferred
         {
             return onResult  ( resultCallback   ).
                 onError   ( errorCallback    ).
-                onProgress( progressCallback ).
-                onCancel  ( cancelCallback   );
+                onProgress( progressCallback );
         }
 
         /**
          * Registers a callback to be called when this Deferred is
-         * either resolved, rejected or cancelled.
+         * either resolved or rejected.
          *
          * @param callbacks Function or Function[ ]
          */
@@ -244,7 +200,6 @@ package com.picmonkey.promise
         {
             onResult  ( callbacks );
             onError       ( callbacks );
-            onCancel  ( callbacks );
 
             return this;
         }
@@ -252,7 +207,7 @@ package com.picmonkey.promise
         /**
          * Utility method to filter and/or chain Deferreds.
          */
-        public function pipe( fnResolve:*=null, fnReject:*=null, fnUpdate:*=null, fnCancel:*=null ):Promise
+        public function pipe( fnResolve:*=null, fnReject:*=null, fnUpdate:*=null ):Promise
         {
             // Create closure reference to `this` context
 
@@ -267,8 +222,7 @@ package com.picmonkey.promise
                             {
                             done       : [fnResolve, "resolve"],
                                     fail       : [fnReject,  "reject"],
-                                    progress   : [fnUpdate,  "notify"],
-                                    onCancel   : [fnCancel,  "cancel"]
+                                    progress   : [fnUpdate,  "notify"]
                                     },
                             function (handler:String, data:Array):void {
 
@@ -290,7 +244,7 @@ package com.picmonkey.promise
                                                 if ( promise ) {
                                                     // This code supports pipe(<doneFunc>) rejecting with a Promise
 
-                                                    promise.then(dfd.resolve, dfd.reject, dfd.notify, dfd.cancel );
+                                                    promise.then(dfd.resolve, dfd.reject, dfd.notify );
 
                                                 } else {
                                                     // Call the resolveWith(), rejectWith(), etc functions
@@ -345,18 +299,6 @@ package com.picmonkey.promise
         }
 
 
-        /**
-         * Registers a callback to be called when this Deferred is cancelled.
-         *
-         * @param callbacks Function or Function[ ]
-         */
-        public function onCancel( callbacks:* ):Deferred
-        {
-            cancelDispatcher.add( callbacks );
-            return this;
-        }
-
-
         // *******************************************************************
         // Public actions/triggers
         // *******************************************************************
@@ -389,15 +331,6 @@ package com.picmonkey.promise
             return this;
         }
 
-        /**
-         * Cancel this Deferred and notifyCallbacks relevant callbacks.
-         */
-        public function cancel( ...args):Deferred
-        {
-            cancelDispatcher.fire.apply(null, args);
-            return this;
-        }
-
         // ***************************************************************
         // Special methods used by the pipe() feature
         // ***************************************************************
@@ -421,20 +354,13 @@ package com.picmonkey.promise
         }
 
 
-        internal  function cancelWith(context:Object,args:Array):Deferred
-        {
-            cancelDispatcher.fireWith(context,args);
-            return this;
-        }
-
-
         // ========================================
         // Protected methods
         // ========================================
 
         /**
          * Configure the callbacks and then add `actions` to be performed
-         * when resolved, rejected, or cancelled.
+         * when resolved or rejected.
          */
         protected function init():void {
 
@@ -443,15 +369,13 @@ package com.picmonkey.promise
             resolveDispatcher   = new Callbacks("once memory");
             rejectDispatcher    = new Callbacks("once memory");
             notifyDispatcher    = new Callbacks("memory");
-            cancelDispatcher    = new Callbacks("once memory");
 
             // Add actions to be triggered when resolved!
 
             resolveDispatcher.add(
                                   function():void  { setState( Deferred.RESOLVED_STATE ); },
                                   function():void  { rejectDispatcher.disable();              },
-                                  function():void  { notifyDispatcher.lock();             },
-                                  function():void  { cancelDispatcher.disable();              }
+                                  function():void  { notifyDispatcher.lock();             }
                                   );
 
             // Add actions to be triggered when rejected!
@@ -459,19 +383,8 @@ package com.picmonkey.promise
             rejectDispatcher.add(
                                  function():void  { resolveDispatcher.disable();         },
                                  function():void  { setState( Deferred.REJECTED_STATE ); },
-                                 function():void  { notifyDispatcher.lock();             },
-                                 function():void  { cancelDispatcher.disable();              }
+                                 function():void  { notifyDispatcher.lock();             }
                                  );
-
-            // Add actions to be triggered when cancelled!
-
-            cancelDispatcher.add(
-                                 function():void  { resolveDispatcher.disable();         },
-                                 function():void  { rejectDispatcher.disable();              },
-                                 function():void  { notifyDispatcher.lock();             },
-                                 function():void  { setState( Deferred.CANCELLED_STATE );}
-                                 );
-
         }
 
         /**
@@ -480,14 +393,12 @@ package com.picmonkey.promise
          * @see #pending
          * @see #resolved
          * @see #rejected
-         * @see #cancelled
          */
         protected function setState( value:String ):void
         {
             if ( value != _state )
                 {
                     _state = value;
-                    dispatchEvent( new Event( STATE_CHANGED ) );
                 }
         }
 
@@ -521,7 +432,6 @@ package com.picmonkey.promise
          * @see #STATE_PENDING
          * @see #STATE_RESOLVED
          * @see #STATE_REJECTED
-         * @see #STATE_CANCELLED
          */
         protected var _state:String = Deferred.PENDING_STATE;
 
@@ -539,12 +449,5 @@ package com.picmonkey.promise
          * Callbacks to be called when this Deferred is updated.
          */
         protected var notifyDispatcher:Callbacks;;
-
-        /**
-         * Callbacks to be called when this Deferred is cancelled.
-         */
-        protected var cancelDispatcher:Callbacks;;
-
-
     }
 }
