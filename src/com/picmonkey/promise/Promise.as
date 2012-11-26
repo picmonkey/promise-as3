@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Copyright (c) 2011 CodeCatalyst, LLC - http://www.codecatalyst.com/
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
@@ -17,531 +17,531 @@
 // AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.	
+// THE SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
 package com.picmonkey.promise
 {
-	import flash.events.Event;
-	import flash.events.EventDispatcher;
-	import flash.events.IEventDispatcher;
-	import flash.utils.clearInterval;
-	import flash.utils.setTimeout;
-	
-	import mx.rpc.AsyncToken;
-	import mx.rpc.Responder;
-	
-	/**
-	 * Promise.
-	 * 
-	 * An object that acts as a proxy for observing deferred result, fault or progress state from a synchronous or asynchronous operation.
-	 * 
-	 * Inspired by jQuery's Promise implementation.
-	 * 
-	 * @author John Yanarella
-	 * @author Thomas Burleson  
-	 */
-	public class Promise extends EventDispatcher
-	{
-		// ========================================
-		// Public properties
-		// ========================================		
-		
-		[Bindable( "stateChanged" )]
-		/**
-		 * Indicates this Promise has not yet been fulfilled.
-		 */
-		public function get pending():Boolean
-		{
-			return deferred.pending;
-		}
-		
-		[Bindable( "stateChanged" )]
-		/**
-		 * Indicates this Promise has been fulfilled.
-		 */
-		public function get resolved():Boolean
-		{
-			return deferred.resolved;
-		}
-		
-		[Bindable( "stateChanged" )]
-		/**
-		 * Indicates this Promise has failed.
-		 */
-		public function get rejected():Boolean
-		{
-			return deferred.rejected;
-		}
-		
-		[Bindable( "stateChanged" )]
-		/**
-		 * Indicates this Promise has been cancelled.
-		 */
-		public function get cancelled():Boolean
-		{
-			return deferred.cancelled;
-		}
-		
-		[Bindable( "stateChanged" )]
-		/**
-		 * Progress supplied when this Promise was updated.
-		 */
-		public function get status():*
-		{
-			return deferred.status;
-		}
-		
-		[Bindable( "stateChanged" )]
-		/**
-		 * Result supplied when this Promise was fulfilled.
-		 */
-		public function get result():*
-		{
-			return deferred.result;
-		}
-		
-		[Bindable( "stateChanged" )]
-		/**
-		 * Error supplied when this Promise failed.
-		 */
-		public function get error():*
-		{
-			return deferred.error;
-		}
-		
-		[Bindable( "stateChanged" )]
-		/**
-		 * Reason supplied when this Promise failed.
-		 */
-		public function get reason():*
-		{
-			return deferred.reason;
-		}
-		
-		// ========================================
-		// Protected properties
-		// ========================================
-		
-		/**
-		 * Deferred operation for which this is a Promise.
-		 */
-		protected var deferred:Deferred = null;
-		
-		// ========================================
-		// Constructor
-		// ========================================
-		
-		/**
-		 * Constructor should only be called/instantiated by a Deferred constructor
-		 */
-		public function Promise( deferred:Deferred )
-		{
-			super();
-			
-			this.deferred = deferred;
-			
-			deferred.addEventListener( Deferred.STATE_CHANGED, deferred_stateChangeHandler, false, 0, true );
-		}
-		
-		// ========================================
-		// Public static methods
-		// ========================================		
-		
-		/**
-		 * Utility method to create a new Promise based on one or more Promises (i.e. parallel chaining).
-		 * 
-		 * NOTE: Result and progress handlers added to this new Promise will be passed an Array of aggregated result or progress values.
-		 */
-		public static function when( ...promises ):Promise
-		{
-			// Insure we have an array of promises
-			promises = sanitize(promises);
-			
-			var size		:int      = promises.length,
-				
-				results  	:Array    = fill( new Array( size ) ),
-				errors		:Array    = fill( new Array( size ) ),
-				statuses    :Array    = fill( new Array( size ) ),
-				reasons    	:Array    = fill( new Array( size ) ),
-				
-				deferred	:Deferred = new Deferred( function(dfd:Deferred):* {
-											// If no promise, immediately resolve
-											return !promises.length && dfd.resolve();			
-										});
-			
-			for each ( var promise:Promise in promises )
-			{
-				/**
-				 * Use IIFE closure to manage promise reference in the then() handlers
-				 */
-				(function (promise:Promise) : void {
-					promise.then(
-						// All promises must resolve() before the when() resolves
-						
-						function ( result:* ):void {
-							results[ promises.indexOf( promise ) ] = result;
-							
-							if ( --size == 0 )
-								deferred.resolve.apply(deferred, results );
-						},
-						
-						// Any promise reject(), rejects the when()
-						
-						function ( error:* ):void {
-							errors[ promises.indexOf( promise ) ] = error;
-							
-							deferred.reject.apply(deferred, errors);
-						},
-						
-						// Only most recent notify value forwarded
-						
-						function ( status:* ):void {
-							statuses[ promises.indexOf( promise ) ] = status;
-							
-							deferred.notify.apply(deferred, statuses );
-						},
-						
-						// Any promise cancel(), cancels the when()
-						
-						function ( reason:* ):void {
-							reasons[ promises.indexOf( promise ) ] = reason;
-							
-							deferred.cancel.apply(deferred, reasons );
-						}
-					);
-				}(promise));
-			}
-			
-			return deferred.promise;
-		}
-		
-		
-		/**
-		 * Similar to the callLater() function but supports any arbitrary delay 
-		 * and allows optional, additional parameters to passed [later] to the 
-		 * resolved handler [assigned via .done() or .then()].
-		 *  
-		 * A special configuration allows the 1st optional parameter to be a function
-		 * reference so the wait(delay,function(){...}) syntax can be easily used.
-		 * 
-		 * Here are the possible call options:
-		 * 
-		 *   wait( delay )
-		 *   wait( delay, ...params )
-		 *   wait( delay, func2Call )
-		 * 	 wait( delay, func2Call, ...func2Params )
-		 * 
-		 * @param delay Number of milliseconds to wait before resolving/projecting the promise; 
-		 *              Default value === 30 msecs
-		 *
-		 * @param args  Optional listing of parameters 
-		 */
-		public static function wait ( delay:uint=30, ...args ) : Promise {
-			
-			/**
-			 * If the first variable param is a Function reference, then auto-call
-			 * that function with/without any subsequent optional params 
-			 */
-			function doInlineCallback():* {
-				var func 	: Function = args.length ? args[0] as Function : null,
-					result  : * 	   = null;
-				
-				if (func != null) {
-					// 1) Remove function element,
-					// 2) Call function, save response, and
-					// 3) Clear arguments
-					
-					args.shift();
-					
-					result = func.apply(null, args);
-					args   = [ ];
-				}
-				
-				return result;
-			}
-			
-			return new Deferred( function(dfd:Deferred) : void {
-				var timer:uint = setTimeout( function():void{
-					clearInterval(timer);
-					
-					// Call the specified function (if any)
-					
-					var response : * = doInlineCallback();
-					
-					// Since resolve() expects a resultVal == *, we use the .call() invocation
-					
-					dfd.resolve.apply( dfd, response ? [response] : args.length ? args : null );
-					
-				}, delay );
-				
-			}).promise;
-		}
-		
-		
-		/**
-		 * Power feature to easily create deferred [delegated handling of response/fault processing]
-		 * for targeted functions, AsyncTokens, HTTPService, URLLoader, RemoteObject, and generalized
-		 * IEventDispatchers. 
-		 * 
-		 * If the target is an IEventDispatcher, this creates a Promise that adapts an 
-		 * asynchronous operation which uses event-based notification:
-		 * 
-		 *  	watch( <IEventDispatcher>, <options> );
-		 *  	watch( <IEventDispatcher>, <resultEventType> ); 
-		 * 		watch( <IEventDispatcher>, <resultEventType>, <faultEventTypes[]>, );
-		 *  	watch( <IEventDispatcher>, <resultEventType>, <faultEventTypes[]>, <options> );
-		 * 
-		 * The <options> parameter is a hashmap of optional key/value pairs:
-		 * 
-		 *          { 
-		 * 		useCapture : <boolean>,
-		 * 	        priority   : <int>,
-		 * 		types 	   : {
-		 * 				result 		: <string>,
-		 * 				faults 		: [ <string> ],
-		 * 				progress	: {
-		 * 							type : <string>,
-		 * 							path : <string>
-		 * 				 		  }
-		 * 			     },
-		 * 
-		 * 		// Token options used to filter only specific event instances of `type`
-		 * 
-		 * 		token  	   : {
-		 * 				path          : <string>,
-		 * 				expectedValue : *
-		 *               	     }
-		 *          }
-		 * 
-		 * 
-		 * @param args Array of optional parameters; only used when the target is an IEventDispatcher
-		 * 
-		 * @see com.picmonkey.util.promise.PromiseUtil#watch()
-		 */
-		public static function watch (target:Object, ...args):Promise {
-			switch (target.constructor) 
-			{
-				case Promise    :
-					return Promise.when( target );
-					
-				case Function   :
-					return new Deferred( function(dfd:Deferred):void {
-						var results:* = Function(target).apply(null,args);
-						
-						// Could be a Promise-generator or a `normal` function
-						
-						if (results is Promise) 
-						{
-							Promise(results)
-							.pipe( function(value:*):* { 
-								return dfd.resolve(value); 
-							});
-							
-						} else {
-							dfd.resolve( results );
-						}
-						
-					}).promise;
-					
-					//return  new Deferred( target as Function ).resolve( args ).promise;
-					
-				case AsyncToken :
-					return  new Deferred( function( dfd:Deferred ):void {
-						var responder : Responder = new Responder( dfd.resolve, dfd.reject );
-						AsyncToken(target).addResponder( responder );
-					}).promise;
-					
-				default        :
-					if ( target is IEventDispatcher )
-					{
-						return PromiseUtil.watch.apply(null, [target].concat(args));
-					}
-			}
-			
-			// Return empty, resolved promise
-			
-			return new Deferred( function(dfd:Deferred):void{ 
-				dfd.resolve( [target].concat(args) ); 
-			}).promise;
-		}		
-		
-		// ========================================
-		// Public methods
-		// ========================================
-		
-		/**
-		 * Register callbacks to be called when this Promise is resolved or rejected.
-		 */
-		public function then( resultCallback:Function, errorCallback:Function = null, progressCallback:Function = null, cancelCallback:Function = null ):Promise
-		{
-			return deferred.then( resultCallback, errorCallback, progressCallback, cancelCallback ).promise;
-		}
-		
-		/**
-		 * Registers a callback to be called when this Promise is either resolved or rejected.
-		 */
-		public function always( alwaysCallback:Function ):Promise
-		{
-			return deferred.always( alwaysCallback ).promise;
-		}
-		
-		/**
-		 * Alias to Deferred.then().
-		 * More intuitive with syntax:  $.when( ... ).done( ... )
-		 * 
-		 * @param resultCallback Function to be called when the Promise resolves.
-		 */
-		public function done ( resultCallback : Function ):Promise 
-		{
-			return deferred.then( resultCallback ).promise;
-		}
-		
-		/**
-		 * Alias to Deferred.fail(); match jQuery API
-		 * 
-		 * @param resultCallback Function to be called when the Promise resolves.
-		 */
-		public function fail ( resultCallback : Function ):Promise 
-		{
-			return deferred.fail( resultCallback ).promise;
-		}
-		
-		/**
-		 * Registers a callback to be called when this Promise is updated.
-		 */
-		public function progress( progressCallback:Function ):Promise
-		{
-			return deferred.progress( progressCallback ).promise;
-		}
-		
-		
-		/**
-		 * Utility method to filter and/or chain Deferreds.
-		 */
-		public function pipe( resultCallback:Function, errorCallback:Function = null, progressCallback:Function=null ):Promise
-		{
-			return deferred.pipe( resultCallback, errorCallback, progressCallback );
-		}
-		
-		
-		/**
-		 * Registers a callback to be called when this Promise is updated.
-		 */
-		public function onProgress( progressCallback:Function ):Promise
-		{
-			return deferred.onProgress( progressCallback ).promise;
-		}
-		
-		/**
-		 * Registers a callback to be called when this Promise is resolved.
-		 */
-		public function onResult( resultCallback:Function ):Promise
-		{
-			return deferred.onResult( resultCallback ).promise;
-		}
-		
-		/**
-		 * Registers a callback to be called when this Promise is rejected.
-		 */
-		public function onError( errorCallback:Function ):Promise
-		{
-			return deferred.onError( errorCallback ).promise;
-		}
-		
-		/**
-		 * Registers a callback to be called when this Promise is cancelled.
-		 */
-		public function onCancel( cancelCallback:Function ):Promise
-		{
-			return deferred.onCancel( cancelCallback ).promise;
-		}
-		
-		/**
-		 * Special feature of this read-only promise:
-		 * Ability to `cancel` this pending Promise.
-		 * 
-		 */
-		public function cancel( reason:* = null ):void
-		{
-			deferred.cancel( reason );
-		}
-		
-		// ========================================
-		// Protected methods
-		// ========================================
-		
-		/**
-		 * Handle and redispatch state change notifications from the Deferred operation.
-		 */
-		protected function deferred_stateChangeHandler( event:Event ):void
-		{
-			dispatchEvent( event.clone() );
-		}
-		
-		/**
-		 * Convert all elements of `list` to promises.
-		 * Scalar values are converted to `resolved` promises
-		 */
-		protected static function sanitize( list:Array ) : Array 
-		{
-			// Special handling for when an Array of Promises is specified instead of variable numbe of Promise arguments.
-			if ( ( list.length == 1 ) && ( list[ 0 ] is Array ) )
-			{
-				list = list[ 0 ];
-			}
-			
-			// Ensure the promises Array is populated with Promises.
-			var count:int = list ? list.length : 0;
-			
-			for ( var j:int = 0; j <  count; j++ )
-			{
-				var parameter:* = list[ j ];
-				
-				if (parameter == null) 
-				{
-					list[ j ] = new Deferred().resolve(null).promise;
-					
-				} else {
-					
-					switch ( parameter.constructor )
-					{
-						case Promise:
-							break;
-						
-						case Deferred:
-							// Replace the promises Array element with the associated Promise for the specified Deferred value.
-							list[ j ] = parameter.promise;
-							break;
-						
-						default:
-							// Create a new Deferred resolved with the specified parameter value, 
-							// and replace the list Array element with the associated Promise.
-							
-							var func : Function = parameter as Function;
-							
-							// NOTE: check if this works when the func() returns a Promise instance?
-							
-							list[ j ] = new Deferred( func ).resolve( (func != null) ? null : parameter).promise;
-							break;
-					}
-				}
-			}			
-			
-			return list;
-		}
-	
-		/**
-		 * Initialize all elements of an array with specified value.
-		 */
-		protected static function fill( list:Array, val:*= undefined ):Array 
-		{
-			for ( var j:uint=0; j<list.length; j++ )
-			{
-				list[j] = val;	
-			}
-			
-			return list;
-		}
-	}
+    import flash.events.Event;
+    import flash.events.EventDispatcher;
+    import flash.events.IEventDispatcher;
+    import flash.utils.clearInterval;
+    import flash.utils.setTimeout;
+
+    import mx.rpc.AsyncToken;
+    import mx.rpc.Responder;
+
+    /**
+     * Promise.
+     *
+     * An object that acts as a proxy for observing deferred result, fault or progress state from a synchronous or asynchronous operation.
+     *
+     * Inspired by jQuery's Promise implementation.
+     *
+     * @author John Yanarella
+     * @author Thomas Burleson
+     */
+    public class Promise extends EventDispatcher
+    {
+        // ========================================
+        // Public properties
+        // ========================================
+
+        [Bindable( "stateChanged" )]
+        /**
+         * Indicates this Promise has not yet been fulfilled.
+         */
+        public function get pending():Boolean
+        {
+            return deferred.pending;
+        }
+
+        [Bindable( "stateChanged" )]
+        /**
+         * Indicates this Promise has been fulfilled.
+         */
+        public function get resolved():Boolean
+        {
+            return deferred.resolved;
+        }
+
+        [Bindable( "stateChanged" )]
+        /**
+         * Indicates this Promise has failed.
+         */
+        public function get rejected():Boolean
+        {
+            return deferred.rejected;
+        }
+
+        [Bindable( "stateChanged" )]
+        /**
+         * Indicates this Promise has been cancelled.
+         */
+        public function get cancelled():Boolean
+        {
+            return deferred.cancelled;
+        }
+
+        [Bindable( "stateChanged" )]
+        /**
+         * Progress supplied when this Promise was updated.
+         */
+        public function get status():*
+        {
+            return deferred.status;
+        }
+
+        [Bindable( "stateChanged" )]
+        /**
+         * Result supplied when this Promise was fulfilled.
+         */
+        public function get result():*
+        {
+            return deferred.result;
+        }
+
+        [Bindable( "stateChanged" )]
+        /**
+         * Error supplied when this Promise failed.
+         */
+        public function get error():*
+        {
+            return deferred.error;
+        }
+
+        [Bindable( "stateChanged" )]
+        /**
+         * Reason supplied when this Promise failed.
+         */
+        public function get reason():*
+        {
+            return deferred.reason;
+        }
+
+        // ========================================
+        // Protected properties
+        // ========================================
+
+        /**
+         * Deferred operation for which this is a Promise.
+         */
+        protected var deferred:Deferred = null;
+
+        // ========================================
+        // Constructor
+        // ========================================
+
+        /**
+         * Constructor should only be called/instantiated by a Deferred constructor
+         */
+        public function Promise( deferred:Deferred )
+        {
+            super();
+
+            this.deferred = deferred;
+
+            deferred.addEventListener( Deferred.STATE_CHANGED, deferred_stateChangeHandler, false, 0, true );
+        }
+
+        // ========================================
+        // Public static methods
+        // ========================================
+
+        /**
+         * Utility method to create a new Promise based on one or more Promises (i.e. parallel chaining).
+         *
+         * NOTE: Result and progress handlers added to this new Promise will be passed an Array of aggregated result or progress values.
+         */
+        public static function when( ...promises ):Promise
+        {
+            // Insure we have an array of promises
+            promises = sanitize(promises);
+
+            var size        :int      = promises.length,
+
+                results     :Array    = fill( new Array( size ) ),
+                errors      :Array    = fill( new Array( size ) ),
+                statuses    :Array    = fill( new Array( size ) ),
+                reasons         :Array    = fill( new Array( size ) ),
+
+                deferred    :Deferred = new Deferred( function(dfd:Deferred):* {
+                        // If no promise, immediately resolve
+                        return !promises.length && dfd.resolve();
+                    });
+
+            for each ( var promise:Promise in promises )
+                         {
+                             /**
+                              * Use IIFE closure to manage promise reference in the then() handlers
+                              */
+                             (function (promise:Promise) : void {
+                                 promise.then(
+                                              // All promises must resolve() before the when() resolves
+
+                                              function ( result:* ):void {
+                                                  results[ promises.indexOf( promise ) ] = result;
+
+                                                  if ( --size == 0 )
+                                                      deferred.resolve.apply(deferred, results );
+                                              },
+
+                                              // Any promise reject(), rejects the when()
+
+                                              function ( error:* ):void {
+                                                  errors[ promises.indexOf( promise ) ] = error;
+
+                                                  deferred.reject.apply(deferred, errors);
+                                              },
+
+                                              // Only most recent notify value forwarded
+
+                                              function ( status:* ):void {
+                                                  statuses[ promises.indexOf( promise ) ] = status;
+
+                                                  deferred.notify.apply(deferred, statuses );
+                                              },
+
+                                              // Any promise cancel(), cancels the when()
+
+                                              function ( reason:* ):void {
+                                                  reasons[ promises.indexOf( promise ) ] = reason;
+
+                                                  deferred.cancel.apply(deferred, reasons );
+                                              }
+                                              );
+                             }(promise));
+                         }
+
+            return deferred.promise;
+        }
+
+
+        /**
+         * Similar to the callLater() function but supports any arbitrary delay
+         * and allows optional, additional parameters to passed [later] to the
+         * resolved handler [assigned via .done() or .then()].
+         *
+         * A special configuration allows the 1st optional parameter to be a function
+         * reference so the wait(delay,function(){...}) syntax can be easily used.
+         *
+         * Here are the possible call options:
+         *
+         *   wait( delay )
+         *   wait( delay, ...params )
+         *   wait( delay, func2Call )
+         *       wait( delay, func2Call, ...func2Params )
+         *
+         * @param delay Number of milliseconds to wait before resolving/projecting the promise;
+         *              Default value === 30 msecs
+         *
+         * @param args  Optional listing of parameters
+         */
+        public static function wait ( delay:uint=30, ...args ) : Promise {
+
+            /**
+             * If the first variable param is a Function reference, then auto-call
+             * that function with/without any subsequent optional params
+             */
+            function doInlineCallback():* {
+                var func    : Function = args.length ? args[0] as Function : null,
+                    result  : *        = null;
+
+                if (func != null) {
+                    // 1) Remove function element,
+                    // 2) Call function, save response, and
+                    // 3) Clear arguments
+
+                    args.shift();
+
+                    result = func.apply(null, args);
+                    args   = [ ];
+                }
+
+                return result;
+            }
+
+            return new Deferred( function(dfd:Deferred) : void {
+                    var timer:uint = setTimeout( function():void{
+                            clearInterval(timer);
+
+                            // Call the specified function (if any)
+
+                            var response : * = doInlineCallback();
+
+                            // Since resolve() expects a resultVal == *, we use the .call() invocation
+
+                            dfd.resolve.apply( dfd, response ? [response] : args.length ? args : null );
+
+                        }, delay );
+
+            }).promise;
+        }
+
+
+        /**
+         * Power feature to easily create deferred [delegated handling of response/fault processing]
+         * for targeted functions, AsyncTokens, HTTPService, URLLoader, RemoteObject, and generalized
+         * IEventDispatchers.
+         *
+         * If the target is an IEventDispatcher, this creates a Promise that adapts an
+         * asynchronous operation which uses event-based notification:
+         *
+         *      watch( <IEventDispatcher>, <options> );
+         *      watch( <IEventDispatcher>, <resultEventType> );
+         *          watch( <IEventDispatcher>, <resultEventType>, <faultEventTypes[]>, );
+         *      watch( <IEventDispatcher>, <resultEventType>, <faultEventTypes[]>, <options> );
+         *
+         * The <options> parameter is a hashmap of optional key/value pairs:
+         *
+         *          {
+         *          useCapture : <boolean>,
+         *              priority   : <int>,
+         *          types      : {
+         *                  result          : <string>,
+         *                  faults          : [ <string> ],
+         *                  progress    : {
+         *                              type : <string>,
+         *                              path : <string>
+         *                            }
+         *                   },
+         *
+         *          // Token options used to filter only specific event instances of `type`
+         *
+         *          token          : {
+         *                  path          : <string>,
+         *                  expectedValue : *
+         *                       }
+         *          }
+         *
+         *
+         * @param args Array of optional parameters; only used when the target is an IEventDispatcher
+         *
+         * @see com.picmonkey.util.promise.PromiseUtil#watch()
+         */
+        public static function watch (target:Object, ...args):Promise {
+            switch (target.constructor)
+                {
+                case Promise    :
+                    return Promise.when( target );
+
+                case Function   :
+                    return new Deferred( function(dfd:Deferred):void {
+                            var results:* = Function(target).apply(null,args);
+
+                            // Could be a Promise-generator or a `normal` function
+
+                            if (results is Promise)
+                                {
+                                    Promise(results)
+                                        .pipe( function(value:*):* {
+                                                return dfd.resolve(value);
+                                            });
+
+                                } else {
+                                dfd.resolve( results );
+                            }
+
+                    }).promise;
+
+                    //return  new Deferred( target as Function ).resolve( args ).promise;
+
+                case AsyncToken :
+                    return  new Deferred( function( dfd:Deferred ):void {
+                            var responder : Responder = new Responder( dfd.resolve, dfd.reject );
+                            AsyncToken(target).addResponder( responder );
+                    }).promise;
+
+                default        :
+                    if ( target is IEventDispatcher )
+                        {
+                            return PromiseUtil.watch.apply(null, [target].concat(args));
+                        }
+                }
+
+            // Return empty, resolved promise
+
+            return new Deferred( function(dfd:Deferred):void{
+                    dfd.resolve( [target].concat(args) );
+            }).promise;
+        }
+
+        // ========================================
+        // Public methods
+        // ========================================
+
+        /**
+         * Register callbacks to be called when this Promise is resolved or rejected.
+         */
+        public function then( resultCallback:Function, errorCallback:Function = null, progressCallback:Function = null, cancelCallback:Function = null ):Promise
+        {
+            return deferred.then( resultCallback, errorCallback, progressCallback, cancelCallback ).promise;
+        }
+
+        /**
+         * Registers a callback to be called when this Promise is either resolved or rejected.
+         */
+        public function always( alwaysCallback:Function ):Promise
+        {
+            return deferred.always( alwaysCallback ).promise;
+        }
+
+        /**
+         * Alias to Deferred.then().
+         * More intuitive with syntax:  $.when( ... ).done( ... )
+         *
+         * @param resultCallback Function to be called when the Promise resolves.
+         */
+        public function done ( resultCallback : Function ):Promise
+        {
+            return deferred.then( resultCallback ).promise;
+        }
+
+        /**
+         * Alias to Deferred.fail(); match jQuery API
+         *
+         * @param resultCallback Function to be called when the Promise resolves.
+         */
+        public function fail ( resultCallback : Function ):Promise
+        {
+            return deferred.fail( resultCallback ).promise;
+        }
+
+        /**
+         * Registers a callback to be called when this Promise is updated.
+         */
+        public function progress( progressCallback:Function ):Promise
+        {
+            return deferred.progress( progressCallback ).promise;
+        }
+
+
+        /**
+         * Utility method to filter and/or chain Deferreds.
+         */
+        public function pipe( resultCallback:Function, errorCallback:Function = null, progressCallback:Function=null ):Promise
+        {
+            return deferred.pipe( resultCallback, errorCallback, progressCallback );
+        }
+
+
+        /**
+         * Registers a callback to be called when this Promise is updated.
+         */
+        public function onProgress( progressCallback:Function ):Promise
+        {
+            return deferred.onProgress( progressCallback ).promise;
+        }
+
+        /**
+         * Registers a callback to be called when this Promise is resolved.
+         */
+        public function onResult( resultCallback:Function ):Promise
+        {
+            return deferred.onResult( resultCallback ).promise;
+        }
+
+        /**
+         * Registers a callback to be called when this Promise is rejected.
+         */
+        public function onError( errorCallback:Function ):Promise
+        {
+            return deferred.onError( errorCallback ).promise;
+        }
+
+        /**
+         * Registers a callback to be called when this Promise is cancelled.
+         */
+        public function onCancel( cancelCallback:Function ):Promise
+        {
+            return deferred.onCancel( cancelCallback ).promise;
+        }
+
+        /**
+         * Special feature of this read-only promise:
+         * Ability to `cancel` this pending Promise.
+         *
+         */
+        public function cancel( reason:* = null ):void
+        {
+            deferred.cancel( reason );
+        }
+
+        // ========================================
+        // Protected methods
+        // ========================================
+
+        /**
+         * Handle and redispatch state change notifications from the Deferred operation.
+         */
+        protected function deferred_stateChangeHandler( event:Event ):void
+        {
+            dispatchEvent( event.clone() );
+        }
+
+        /**
+         * Convert all elements of `list` to promises.
+         * Scalar values are converted to `resolved` promises
+         */
+        protected static function sanitize( list:Array ) : Array
+        {
+            // Special handling for when an Array of Promises is specified instead of variable numbe of Promise arguments.
+            if ( ( list.length == 1 ) && ( list[ 0 ] is Array ) )
+                {
+                    list = list[ 0 ];
+                }
+
+            // Ensure the promises Array is populated with Promises.
+            var count:int = list ? list.length : 0;
+
+            for ( var j:int = 0; j <  count; j++ )
+                {
+                    var parameter:* = list[ j ];
+
+                    if (parameter == null)
+                        {
+                            list[ j ] = new Deferred().resolve(null).promise;
+
+                        } else {
+
+                        switch ( parameter.constructor )
+                            {
+                            case Promise:
+                                break;
+
+                            case Deferred:
+                                // Replace the promises Array element with the associated Promise for the specified Deferred value.
+                                list[ j ] = parameter.promise;
+                                break;
+
+                            default:
+                                // Create a new Deferred resolved with the specified parameter value,
+                                // and replace the list Array element with the associated Promise.
+
+                                var func : Function = parameter as Function;
+
+                                // NOTE: check if this works when the func() returns a Promise instance?
+
+                                list[ j ] = new Deferred( func ).resolve( (func != null) ? null : parameter).promise;
+                                break;
+                            }
+                    }
+                }
+
+            return list;
+        }
+
+        /**
+         * Initialize all elements of an array with specified value.
+         */
+        protected static function fill( list:Array, val:*= undefined ):Array
+        {
+            for ( var j:uint=0; j<list.length; j++ )
+                {
+                    list[j] = val;
+                }
+
+            return list;
+        }
+    }
 }
