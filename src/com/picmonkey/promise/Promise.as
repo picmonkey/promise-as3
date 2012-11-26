@@ -20,7 +20,7 @@
 // THE SOFTWARE.	
 ////////////////////////////////////////////////////////////////////////////////
 
-package com.codecatalyst.promise
+package com.picmonkey.promise
 {
 	import flash.events.Event;
 	import flash.events.EventDispatcher;
@@ -317,7 +317,7 @@ package com.codecatalyst.promise
 		 * 
 		 * @param args Array of optional parameters; only used when the target is an IEventDispatcher
 		 * 
-		 * @see com.codecatalyst.util.promise.PromiseUtil#watch()
+		 * @see com.picmonkey.util.promise.PromiseUtil#watch()
 		 */
 		public static function watch (target:Object, ...args):Promise {
 			switch (target.constructor) 

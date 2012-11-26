@@ -20,7 +20,7 @@
 // THE SOFTWARE.	
 ////////////////////////////////////////////////////////////////////////////////
 
-package com.codecatalyst.promise
+package com.picmonkey.promise
 {
 	import flash.events.Event;
 	import flash.events.EventDispatcher;
@@ -31,7 +31,7 @@ package com.codecatalyst.promise
 	 * A chainable utility object that can register multiple callbacks into callback queues, invoke callback queues,
 	 * and relay the success, failure and progress _state of any synchronous or asynchronous operation.
 	 * 
-	 * @see com.codecatalyst.util.promise.Promise
+	 * @see com.picmonkey.util.promise.Promise
 	 * 
 	 * Inspired by jQuery's Deferred implementation.
 	 * 

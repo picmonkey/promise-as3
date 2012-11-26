@@ -1,4 +1,4 @@
-package com.codecatalyst.promise
+package com.picmonkey.promise
 {
 	import flash.events.Event;
 	import flash.events.IEventDispatcher;
@@ -44,7 +44,7 @@ package com.codecatalyst.promise
 		 * 
 		 * @param target IEventDispatcher which the Deferred will internally attach specified listeners
 		 * 
-		 * @see com.codecatalyst.util.promise.jQuery#jQuery()
+		 * @see com.picmonkey.util.promise.jQuery#jQuery()
 		 *
 		 */
 		public static function watch( target:IEventDispatcher, ...args):Promise {
@@ -85,7 +85,7 @@ package com.codecatalyst.promise
 		 * In this case, use the optional eventTokenProperty and eventTokenPropertyPath parameters to specify this token and its path (in dot notation) relative to the Events.
 		 * 
 		 * Promise callbacks will be called with the corresponding Event; consider using Promise'source pipe() method to process the Event into result or fault values. 
-		 * @see com.codecatalyst.util.promise.Promise#pipe()
+		 * @see com.picmonkey.util.promise.Promise#pipe()
 		 * 
 		 * NOTE: It is critical to specify the result event type and all possible fault event types to avoid introducing memory leaks.
 		 */

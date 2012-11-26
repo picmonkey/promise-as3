@@ -1,4 +1,4 @@
-package com.codecatalyst.promise
+package com.picmonkey.promise
 {
 	import flash.events.Event;
 	import flash.events.EventDispatcher;
